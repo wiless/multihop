@@ -1,0 +1,67 @@
+{
+    "$schema": "https://vega.github.io/schema/vega-lite/v5.json",
+    "width": 500,
+    "height": 500,
+    "layer": [
+        {
+            "selection": {
+                "pandz": {
+                    "type": "interval",
+                    "bind": "scales"
+                }
+            },
+            "data": {
+                "url": "uelocation.csv"
+            },
+            "mark": "point",
+            "encoding": {
+                "x": {
+                    "field": "X",
+                    "type": "quantitative"
+                },
+                "y": {
+                    "field": "Y",
+                    "type": "quantitative"
+                },
+                "stroke": {
+                    "field": "GCellID",
+                    "legend": null
+                }
+            }
+        },
+        {
+            "data": {
+                "url": "relays.csv"
+            },
+            "mark": "point",
+            "encoding": {
+                "size": {
+                    "value": 150
+                },
+                "x": {
+                    "field": "X",
+                    "type": "quantitative"
+                },
+                "y": {
+                    "field": "Y",
+                    "type": "quantitative"
+                },
+                "stroke": {
+                    "value": "black"
+                },
+                "fill": {
+                    "field": "FreqInGHz",
+                    "scale": {
+                        "type": "ordinal",
+                        "range": [
+                            "red",
+                            "blue",
+                            "black",
+                            "green"
+                        ]
+                    }
+                }
+            }
+        }
+    ]
+}

@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Plot tools</title>
+
+    <script src="https://cdn.jsdelivr.net/npm/d3@7"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@observablehq/plot@0.1"></script>
+</head>
+
+<body>
+    <div id="plot"> </div>
+    <script>
+        var options;
+        var data;
+        var options = {
+
+            style: {
+                paddingTop: 10,
+            },
+
+            caption: "Figure 1.  ",
+            grid: false,
+            marks: [
+
+            ]
+        };
+        d3.csv("uelocation.csv", d3.autoType).then(d => {
+            data = d;
+            options.marks.push(Plot.dot(data, { x: "X", y: "Y", fill: "grey", fillOpacity: 0.1 }))
+            document.getElementById("plot").firstChild.remove();
+            document.getElementById("plot").appendChild(Plot.plot(options));
+        });
+        d3.csv("relays.csv", d3.autoType).then(d => {
+            data = d;
+            options.marks.push(Plot.dot(data, { x: "X", y: "Y", fill: "FreqInGHz", fillOpacity: 1 }))
+            document.getElementById("plot").firstChild.remove();
+            document.getElementById("plot").appendChild(Plot.plot(options));
+        });
+
+
+    </script>
+</body>
+
+</html>

@@ -216,44 +216,107 @@ func SubStruct(v interface{}, fields ...string) interface{} {
 	// 	tOfv.FieldByName()
 	// }
 }
-func main() {
-	itucfg, _ = config.ReadITUConfig(basedir + "itu.cfg")
-	LoadCSV("bslocation.csv", &bslocs)
-	// splitLinkLevelInfo("linkproperties.csv")
 
-	fname := basedir + "linkproperties.csv"
-	fd, _ := os.Create(basedir + "linkproperties-min.csv")
+func CreateSLS(fname string, full bool) {
+
+	// var userid = 384
+	var data []LinkProfile
+	// fname = basedir + fname
+	fd, _ := os.Create(fname)
+	fmt.Println("Creating ", fname)
 	defer fd.Close()
+	cnt := 0
+	var sls SLSprofile
+	str, _ := vlib.Struct2HeaderLine(sls)
+	fmt.Fprintf(fd, "\n%s", str)
+	ForEachParse(basedir+"linkproperties.csv", func(l LinkProfile) {
+		// if userid != l.Rxid {
+		// 	os.Exit(0)
+		// }
+		if cnt == 0 {
+			// userid = l.Rxid
+		}
 
-	nl := SubStruct(LinkProfile{}, "Rxid", "TxID", "CouplingLoss")
-	str, err := vlib.Struct2HeaderLine(nl)
-	er(err)
-	fd.WriteString("\n" + str)
+		data = append(data, l)
+		cnt++
+		if cnt%NBs == 0 {
+			// Process and reset counter
+			var totalrssi = 0.0
+			var sinrvalues []float64
+			var rssi []float64
+			for _, v := range data {
+				tmp := vlib.InvDb(v.CouplingLoss + v.TxPower)
+				totalrssi += tmp
+				rssi = append(rssi, tmp)
+				sinrvalues = append(sinrvalues, tmp)
+			}
 
-	ForEachParse(fname, func(l LinkProfile) {
+			N0 := 0.0 // in linear scale
+			for i, v := range sinrvalues {
+				sinrvalues[i] = vlib.Db(v / (totalrssi - sinrvalues[i] + N0))
+			}
 
-		// fmt.Println("Read : %#v", l)
-		// gcellid := ((l.Rxid - len(bslocs)) / itucfg.NumUEperCell)
-		// fmt.Printf("\n%v | CNT = %d, ue=%d ", gcellid, cnt, l.Rxid-len(bslocs))
-		// cnt++
-		nl := SubStruct(l, "Rxid", "TxID", "CouplingLoss")
-		str, err := vlib.Struct2String(nl)
-		er(err)
-		fd.WriteString("\n" + str)
+			// fmt.Printf("\n\nSINR = %#v", bestsinr)
+			// sort.Float64s(bestsinr)
+			sortedsinr, indx := vlib.Sorted(sinrvalues)
+			bestid := indx[NBs-1]
+			bestlink := data[bestid]
+			maxsinr := sortedsinr[bestid]
+
+			{
+
+				/// full  details
+				if full {
+					sls = SLSprofile{
+						RxNodeID:  bestlink.Rxid,
+						FreqInGHz: itucfg.CarriersGHz, BandwidthMHz: itucfg.BandwidthMHz, N0: N0, RSSI: totalrssi, BestRSRP: rssi[bestid],
+						BestRSRPNode: bestlink.TxID,
+						BestSINR:     maxsinr, RoIDbm: vlib.Db(totalrssi - rssi[bestid]), BestCouplingLoss: bestlink.CouplingLoss,
+						AssoTxAg: bestlink.BSAasgainDB, AssoRxAg: bestlink.UEAasgainDB,
+					}
+				} else {
+					// small file size.. if less columns are added
+					sls = SLSprofile{
+						RxNodeID: bestlink.Rxid,
+
+						BestRSRPNode: bestlink.TxID,
+						BestSINR:     maxsinr,
+						AssoTxAg:     bestlink.BSAasgainDB, AssoRxAg: bestlink.UEAasgainDB,
+					}
+				}
+
+				str, _ := vlib.Struct2String(sls)
+				fmt.Fprintf(fd, "\n%s", str)
+			}
+
+			// for i := 0; i < 5; i++ {
+			// 	fmt.Println(sortedsinr[NBs-i-1])
+			// }
+
+			data = []LinkProfile{}
+			// fmt.Printf("\n\nSINR =%#v", v)
+			// fmt.Printf("\n\nIndex =%#v", indx)
+			// Looking up values based on index..
+
+			cnt = 0
+		}
+
+		// nl := SubStruct(l, "Rxid", "TxID", "CouplingLoss")
+		// str, err := vlib.Struct2String(nl)
+		// er(err)
+		// fd.WriteString("\n" + str)
 		// fmt.Printf("\nWriting ...%v", str)
 
 	})
+}
 
-	// data := LinkProfile{TxID: 100, Rxid: 430, CouplingLoss: 80, IsLOS: true}
-	// result, err := SubStruct(data, "Rxid", "TxID", "CouplingLoss").(struct {
-	// 	Rxid         int
-	// 	TxID         int
-	// 	CouplingLoss float64
-	// })
-	// fmt.Println("Error ", err)
-	//"Pathloss", "O2I", "InCar", "ShadowLoss", "BSAasgainDB"
-	// splitUELocations("uelocation.csv")
-	// fmt.Printf("%#v | %#v", result, MiniLink{})
+var NBs int
+
+func main() {
+	itucfg, _ = config.ReadITUConfig(basedir + "itu.cfg")
+	LoadCSV("bslocation.csv", &bslocs)
+	NBs = len(bslocs)
+	CreateSLS(basedir+"newsls.csv", true)
 }
 
 /*
@@ -324,3 +387,28 @@ func xmain() {
 	// fmt.Println("\n\n done....")
 }
 */
+
+func SplitLinkLevelFile() {
+
+	fname := basedir + "linkproperties.csv"
+	fd, _ := os.Create(basedir + "linkproperties-min.csv")
+	defer fd.Close()
+
+	nl := SubStruct(LinkProfile{}, "Rxid", "TxID", "CouplingLoss")
+	str, err := vlib.Struct2HeaderLine(nl)
+	er(err)
+	fd.WriteString("\n" + str)
+	ForEachParse(fname, func(l LinkProfile) {
+
+		// fmt.Println("Read : %#v", l)
+		// gcellid := ((l.Rxid - len(bslocs)) / itucfg.NumUEperCell)
+		// fmt.Printf("\n%v | CNT = %d, ue=%d ", gcellid, cnt, l.Rxid-len(bslocs))
+		// cnt++
+		nl := SubStruct(l, "Rxid", "TxID", "CouplingLoss")
+		str, err := vlib.Struct2String(nl)
+		er(err)
+		fd.WriteString("\n" + str)
+		// fmt.Printf("\nWriting ...%v", str)
+
+	})
+}

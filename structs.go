@@ -31,17 +31,20 @@ type UElocation struct {
 
 // RxNodeID,FreqInGHz,BandwidthMHz,N0,RSSI,BestRSRP,BestRSRPNode,BestSINR,RoIDbm,BestCouplingLoss,MaxTxAg,MaxRxAg,AssoTxAg,AssoRxAg,MaxTransmitBeamID
 type SLSprofile struct {
-	RxNodeID                                                                                                                            int
-	FreqInGHz, BandwidthMHz, N0, RSSI, BestRSRP, BestRSRPNode, BestSINR, RoIDbm, BestCouplingLoss, MaxTxAg, MaxRxAg, AssoTxAg, AssoRxAg float64
-	MaxTransmitBeamID                                                                                                                   int
+	RxNodeID                                                                 int
+	FreqInGHz, BandwidthMHz, N0, RSSI, BestRSRP                              float64
+	BestRSRPNode                                                             int
+	BestSINR, RoIDbm, BestCouplingLoss, MaxTxAg, MaxRxAg, AssoTxAg, AssoRxAg float64
+	MaxTransmitBeamID                                                        int
 }
 
 // Rxid,txID,distance,IndoorDistance,UEHeight,IsLOS,CouplingLoss,Pathloss,O2I,InCar,ShadowLoss,TxPower,BSAasgainDB,UEAasgainDB,TxGCSaz,TxGCSel,RxGCSaz,RxGCSel
 
 type LinkProfile struct {
 	Rxid                                                                                                                  int
-	TxID                                                                                                                  int `csv:"txID"`
-	distance, IndoorDistance, UEHeight                                                                                    float64
+	TxID                                                                                                                  int     `csv:"txID"`
+	Distance                                                                                                              float64 `csv:"distance"`
+	IndoorDistance, UEHeight                                                                                              float64
 	IsLOS                                                                                                                 bool
 	CouplingLoss, Pathloss, O2I, InCar, ShadowLoss, TxPower, BSAasgainDB, UEAasgainDB, TxGCSaz, TxGCSel, RxGCSaz, RxGCSel float64
 }
