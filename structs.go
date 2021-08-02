@@ -38,8 +38,6 @@ type SLSprofile struct {
 	MaxTransmitBeamID                                                        int
 }
 
-// Rxid,txID,distance,IndoorDistance,UEHeight,IsLOS,CouplingLoss,Pathloss,O2I,InCar,ShadowLoss,TxPower,BSAasgainDB,UEAasgainDB,TxGCSaz,TxGCSel,RxGCSaz,RxGCSel
-
 type LinkProfile struct {
 	Rxid                                                                                                                  int
 	TxID                                                                                                                  int     `csv:"txID"`
