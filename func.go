@@ -7,6 +7,7 @@ import (
 	"reflect"
 	"strings"
 
+	"github.com/schollz/progressbar"
 	"github.com/wiless/d3"
 	"github.com/wiless/vlib"
 )
@@ -39,11 +40,13 @@ func CreateSLS(slsfname, linkfname string, full bool) {
 	fmt.Fprintf(fd, "\n%s", str)
 
 	TotalLines := itucfg.NumUEperCell * NBs * 19
-	progress := 0
-	step := int(float64(TotalLines*5) / 100.0) // 5%
-	finfo, _ := os.Stat(linkfname)
-	fmt.Printf("%d ROWS %vMB\n", TotalLines, finfo.Size()/(1024*1024))
+	// progress := 0
+	// step := int(float64(TotalLines*5) / 100.0) // 5%
+	// finfo, _ := os.Stat(linkfname)
+	// fmt.Printf("%d ROWS %vMB\n", TotalLines, finfo.Size()/(1024*1024))
 	N0dB := vlib.Db(N0)
+
+	bar := progressbar.Default(int64(TotalLines))
 	ForEachParse(linkfname, func(l LinkProfile) {
 
 		data = append(data, l)
@@ -103,11 +106,12 @@ func CreateSLS(slsfname, linkfname string, full bool) {
 
 			cnt = 0
 		}
-		progress++
-		if progress%step == 0 {
-			fmt.Printf("==")
+		bar.Add(1)
+		// progress++
+		// if progress%step == 0 {
+		// 	fmt.Printf("==")
 
-		}
+		// }
 	})
 	fmt.Printf("\n")
 
@@ -127,7 +131,8 @@ func CreateMiniLinkProfiles(newfname string, linkfname string) {
 	fd.WriteString("\n" + str)
 	// progress bar
 	TotalLines := itucfg.NumUEperCell * NBs * 19
-	step := int(float64(TotalLines*5) / 100.0) // 5%
+	bar := progressbar.Default(int64(TotalLines))
+	// step := int(float64(TotalLines*5) / 100.0) // 5%
 	cnt := 0
 
 	finfo, _ := os.Stat(linkfname)
@@ -139,10 +144,7 @@ func CreateMiniLinkProfiles(newfname string, linkfname string) {
 		er(err)
 		fd.WriteString("\n" + str)
 		cnt++
-		if cnt%step == 0 {
-			fmt.Printf("==")
-
-		}
+		bar.Add(1)
 	})
 	fmt.Printf("\n")
 }
@@ -220,11 +222,11 @@ func SplitSLSprofileByCell(newfnamebase, slsfname string, full bool) {
 	}
 
 	TotalLines := itucfg.NumUEperCell
-	progress := 0
-	step := int(float64(TotalLines*5) / 100.0) // 5%
+	// progress := 0
+	// step := int(float64(TotalLines*5) / 100.0) // 5%
 	finfo, _ := os.Stat(slsfname)
 	fmt.Printf("%d ROWS %vMB\n", TotalLines, finfo.Size()/(1024*1024))
-
+	bar := progressbar.Default(int64(TotalLines))
 	// split SLSprofile entries into multiple GCellID
 	var gcellid int = 0
 	var cnt = 0
@@ -246,11 +248,7 @@ func SplitSLSprofileByCell(newfnamebase, slsfname string, full bool) {
 			gcellid++
 			cnt = 0
 		}
-		progress++
-		if progress%step == 0 {
-			fmt.Printf("==")
-		}
-
+		bar.Add(1)
 	})
 	fmt.Printf("\n")
 }
@@ -287,11 +285,11 @@ func SplitLinkProfilesByCell(newfnamebase, linkfname string, full bool) {
 
 	// split LinkProperties entries into multiple GCellID
 	TotalLines := itucfg.NumUEperCell * NBs * 19
-	progress := 0
-	step := int(float64(TotalLines*5) / 100.0) // 5%
+	// progress := 0
+	// step := int(float64(TotalLines*5) / 100.0) // 5%
 	finfo, _ := os.Stat(linkfname)
 	fmt.Printf("%d ROWS %vMB\n", TotalLines, finfo.Size()/(1024*1024))
-
+	bar := progressbar.Default(int64(TotalLines))
 	var cnt int = 0
 	NLinksPerCell := itucfg.NumUEperCell * NBs
 	var gcellid int = 0
@@ -314,10 +312,7 @@ func SplitLinkProfilesByCell(newfnamebase, linkfname string, full bool) {
 			cnt = 0
 			gcellid++
 		}
-		progress++
-		if progress%step == 0 {
-			fmt.Printf("==")
-		}
+		bar.Add(1)
 
 	})
 	fmt.Printf("\n")
@@ -389,9 +384,9 @@ func SplitUELocationsByCell(fname string) {
 	}
 
 	var cnt int = 0
-
+	bar := progressbar.Default(int64(itucfg.NumUEperCell * 19))
 	ForEachParse(fname, func(u UElocation) {
-
+		bar.Add(1)
 		gcell := u.GCellID
 		// fmt.Printf("\n %d [%d]| %v ", cnt, gcell, u)
 		str, err := vlib.Struct2String(u)

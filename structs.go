@@ -69,7 +69,6 @@ func LoadCSV(fname string, v interface{}) interface{} {
 
 func LoadSLSprofile(fname string) []SLSprofile {
 	// fname += ".csv"
-	fname = basedir + fname
 
 	fid, err := os.Open(fname)
 	er(err)
@@ -97,7 +96,6 @@ var er = func(err error) {
 // uid,x,y,z,cellid,gdistance,in/out, car
 func LoadUELocations(fname string) []UElocation {
 	// fname += ".csv"
-	fname = basedir + fname
 	fid, err := os.Open(fname)
 	er(err)
 
