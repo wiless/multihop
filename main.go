@@ -53,7 +53,7 @@ func main() {
 	//PrepareInputFiles()
 
 	// Finding relays
-	FindRelays(basedir + "relaylocations.csv")
+	FindRelays(basedir+"relaylocations.csv", 0.01) // 1% as relays
 	//BS Information
 	bsalias := d3.FlatMap(bslocs, "Alias")
 	_ = bsalias
@@ -72,7 +72,7 @@ type RelayNode struct {
 	FrequencyGHz float64
 }
 
-func FindRelays(fname string) {
+func FindRelays(fname string, percentage float64) {
 
 	fd, err := os.Create(fname)
 	er(err)
@@ -82,7 +82,7 @@ func FindRelays(fname string) {
 	header, _ := vlib.Struct2HeaderLine(RelayNode{})
 	fd.WriteString(header)
 
-	NRelayPerCell := 5 // int(float64(itucfg.NumUEperCell) * .01)
+	NRelayPerCell := int(float64(itucfg.NumUEperCell) * percentage)
 	NCells := 19
 	// TotalRelays := NRelayPerCell * NCells
 	NRelayChannels := 4 /// = Total channels -1  (Channel 0 reserved for BS)
