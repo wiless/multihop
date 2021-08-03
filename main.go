@@ -1,6 +1,7 @@
 package main
 
 import (
+	"flag"
 	"fmt"
 
 	"github.com/5gif/config"
@@ -22,6 +23,12 @@ var bslocs []BSlocation
 
 var NBs int
 var N0 float64 // N0 in linear scale
+
+func init() {
+	flag.StringVar(&basedir, "basedir", "N500/", "Prefix for result files, use as -basedir=results/")
+	flag.Parse()
+}
+
 func main() {
 	itucfg, _ = config.ReadITUConfig(basedir + "itu.cfg")
 	// ----
