@@ -50,7 +50,7 @@ func main() {
 	N0 = vlib.InvDb(N0dB)
 	fmt.Println("N0 (dB)", N0dB)
 
-	//PrepareInputFiles()
+	PrepareInputFiles()
 
 	// Finding relays
 	FindRelays(basedir+"relaylocations.csv", 0.01) // 1% as relays
