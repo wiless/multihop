@@ -116,7 +116,7 @@ func LoadUELocations(fname string) []UElocation {
 
 func ForEachParse(fname string, fn interface{}) {
 
-	log.Printf("\n ForEach()..")
+	// log.Printf("\n ForEach()..")
 	tOffn := reflect.TypeOf(fn)
 
 	fnVal := reflect.ValueOf(fn)

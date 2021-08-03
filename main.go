@@ -24,23 +24,24 @@ var NBs int
 var N0 float64 // N0 in linear scale
 func main() {
 	itucfg, _ = config.ReadITUConfig(basedir + "itu.cfg")
-	BW = itucfg.BandwidthMHz
-	RxNoisedB = itucfg.UENoiseFigureDb // For Downlink
+	// ----
+	LoadCSV("bslocation.csv", &bslocs) // needed ?
 	NBs = len(bslocs)
+
+	BW = itucfg.BandwidthMHz
+	RxNoisedB = itucfg.UENoiseFigureDb         // For Downlink
 	N0dB := -174 + vlib.Db(BW*1e6) + RxNoisedB // in linear scale
 	N0 = vlib.InvDb(N0dB)
 	fmt.Println("N0 (dB)", N0dB)
 
-	// ----
-	LoadCSV("bslocation.csv", &bslocs) // needed ?
-	SplitUELocationsByCell(basedir + "uelocation.csv")
+	// SplitUELocationsByCell(basedir + "uelocation.csv")
 
-	CreateSLS(basedir+"newsls.csv", basedir+"linkproperties.csv", true)       // Regenerate SLS full
-	CreateSLS(basedir+"newsls-mini.csv", basedir+"linkproperties.csv", false) // Regenerate SLS mini
-	SplitSLSprofileByCell(basedir + "newsls.csv")                             // Split SLS by Cell
+	CreateSLS(basedir+"newsls.csv", basedir+"linkproperties.csv", true)            // Regenerate SLS full
+	CreateSLS(basedir+"newsls-mini.csv", basedir+"linkproperties.csv", false)      // Regenerate SLS mini
+	SplitSLSprofileByCell(basedir+"newsls-mini", basedir+"newsls-mini.csv", false) // Split SLS by Cell
 
 	CreateMiniLinkProfiles(basedir+"linkproperties-mini.csv", basedir+"linkproperties.csv")
-	SplitLinkProfilesByCell(basedir + "linkproperties.csv")
+	SplitLinkProfilesByCell(basedir+"linkmini", basedir+"linkproperties.csv", false)
 
 }
 
