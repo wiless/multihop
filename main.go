@@ -4,6 +4,7 @@ import (
 	"flag"
 	"fmt"
 	"math"
+	"math/rand"
 	"os"
 	"strings"
 
@@ -50,26 +51,48 @@ func main() {
 	N0 = vlib.InvDb(N0dB)
 	fmt.Println("N0 (dB)", N0dB)
 
-	PrepareInputFiles()
+	// PrepareInputFiles()
 
 	// Finding relays
-	FindRelays(basedir+"relaylocations.csv", 0.01) // 1% as relays
+	// FindRelays(basedir+"relaylocations.csv", 0.01) // 1% as relays
+
 	//BS Information
-	bsalias := d3.FlatMap(bslocs, "Alias")
-	_ = bsalias
-	// fmt.Printf("\nBSLocation %#v ", bsalias)
+	// bsalias := d3.FlatMap(bslocs, "Alias")
+	// _ = bsalias
+
+	GenerateRelayLinkProps()
+
+}
+func GenerateRelayLinkProps() {
 
 }
 
-func Shuffle(inparray interface{}) {
+func EvalauteMetricRelay(rx UElocation, tx RelayNode) LinkProfile {
 
-}
+	src := vlib.Location3D{tx.X, tx.Y, tx.Z}
+	dest := vlib.Location3D{rx.X, rx.Y, rx.Z}
 
-// Assuming
+	newlink := LinkProfile{
+		Rxid:     rx.ID,
+		TxID:     tx.ID,
+		Distance: dest.DistanceFrom(src),
+		UEHeight: rx.Z,
+	}
+	// IsLOS:
+	// CouplingLoss, Pathloss, O2I, InCar, ShadowLoss, TxPower, BSAasgainDB, UEAasgainDB, TxGCSaz, TxGCSel, RxGCSaz, RxGCSel
+	var indoordist = 0.0
+	if rx.Indoor {
+		indoordist = 25.0 * rand.Float64() // Assign random indoor distance  See Table 7.4.3-2
+	}
 
-type RelayNode struct {
-	UElocation
-	FrequencyGHz float64
+	newlink.IndoorDistance = indoordist
+	newlink.IsLOS = IsLOS(newlink.Distance) // @Todo
+	// newlink.Pathloss = // @Todo
+	// newlink.CouplingLoss = // @Todo
+
+	newlink.TxPower = 23.0
+	newlink.BSAasgainDB = 0
+	return newlink
 }
 
 func FindRelays(fname string, percentage float64) {
@@ -202,72 +225,3 @@ func PrepareInputFiles() {
 
 	// }
 }
-
-/*
-func xmain() {
-	rand.Seed(time.Now().Unix())
-	fmt.Println("Starting..")
-	// var ivec vlib.GIntVector
-	// var ivec = []UElocation{{ID: 0, X: -100}, {ID: 1, X: 200}, {ID: 2, X: 200}, {ID: 3, X: 200}, {ID: 4, X: 200}}
-
-	ues := LoadUELocations("uelocation.csv")
-
-	// slsprofile := LoadSLSprofile("slsprofile.csv")
-
-	var filteredues []UElocation
-	myfunc := func(ue UElocation) bool {
-		return ue.GCellID == 0
-	}
-	filteredues = d3.Filter(ues, myfunc).([]UElocation)
-	_ = filteredues
-	// fmt.Println("Matching devices",
-	// 	d3.FilterIndex(ues, myfunc))
-	fmt.Printf("\n\n Outdoor Gcell %v | %d", d3.FlatMap(filteredues, "ID"), len(filteredues))
-
-	splitSLSprofile(ues)
-
-	// fmt.Printf("\nSearch High SINR")
-
-	// type Relay struct {
-	// 	UElocation
-	// 	Relay bool
-	// 	SLSprofile
-	// }
-	// var relays []Relay
-	// // type UEinfo struct {
-	// // 	ID int
-	// // 	GCellID int
-	// // }
-	// // uelookup := d3.Map(ues, func(ue UElocation)  {
-
-	// // }
-
-	// newues := d3.Filter(filteredues, func(ue UElocation) bool {
-	// 	var findindex int
-	// 	findindex = d3.FindFirstIndex(slsprofile, func(indx int, sls SLSprofile) bool {
-	// 		valid := sls.BestSINR > 15 && sls.RxNodeID == ue.ID
-	// 		if valid {
-	// 			fmt.Printf("..")
-	// 			sls.FreqInGHz += float64(rand.Intn(4))
-	// 			relays = append(relays, Relay{ue, true, sls})
-	// 		}
-	// 		return valid
-	// 	})
-	// 	return (findindex >= 0)
-	// }).([]UElocation)
-
-	// // fmt.Printf("\n\n SINR %#v", relays)
-	// // str, _ := csvutil.Header(UElocation{}, "")
-	// fid, _ := os.Create("relays.csv")
-	// w := csv.NewWriter(fid)
-	// enc := csvutil.NewEncoder(w)
-	// enc.EncodeHeader(Relay{})
-	// for _, v := range relays {
-	// 	enc.Encode(v)
-	// }
-	// w.Flush()
-
-	// fmt.Printf("\n\n RelayID %v", d3.FlatMap(newues, "ID"))
-	// fmt.Println("\n\n done....")
-}
-*/

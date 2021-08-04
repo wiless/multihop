@@ -47,6 +47,11 @@ type LinkProfile struct {
 	CouplingLoss, Pathloss, O2I, InCar, ShadowLoss, TxPower, BSAasgainDB, UEAasgainDB, TxGCSaz, TxGCSel, RxGCSaz, RxGCSel float64
 }
 
+type RelayNode struct {
+	UElocation
+	FrequencyGHz float64
+}
+
 func LoadCSV(fname string, v interface{}) interface{} {
 	fname = basedir + fname
 
