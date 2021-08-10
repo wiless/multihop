@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"log"
 	"os"
-	"reflect"
 	"strings"
 
 	"github.com/schollz/progressbar"
@@ -31,15 +30,15 @@ func CreateSLS(slsfname, linkfname string, full bool) {
 	defer fd.Close()
 	cnt := 0
 	var sls SLSprofile
-	str, _ := vlib.Struct2HeaderLine(sls)
+	header, _ := vlib.Struct2HeaderLine(sls)
 	if !full {
-		newsls := SubStruct(sls, "RxNodeID", "BestRSRPNode", "BestSINR", "AssoTxAg", "AssoRxAg")
-		str, _ = vlib.Struct2HeaderLine(newsls)
+		newsls := d3.SubStruct(sls, "RxNodeID", "BestRSRPNode", "BestSINR", "BestULsinr", "AssoTxAg", "AssoRxAg")
+		header, _ = vlib.Struct2HeaderLine(newsls)
 	}
 
-	fmt.Fprintf(fd, "\n%s", str)
+	fd.WriteString(header)
 
-	TotalLines := itucfg.NumUEperCell * NBs * 19
+	TotalLines := itucfg.NumUEperCell * NBs * simcfg.ActiveUECells
 	// progress := 0
 	// step := int(float64(TotalLines*5) / 100.0) // 5%
 	// finfo, _ := os.Stat(linkfname)
@@ -47,7 +46,7 @@ func CreateSLS(slsfname, linkfname string, full bool) {
 	N0dB := vlib.Db(N0)
 
 	bar := progressbar.Default(int64(TotalLines))
-	ForEachParse(linkfname, func(l LinkProfile) {
+	processrow := func(l LinkProfile) {
 
 		data = append(data, l)
 		cnt++
@@ -78,7 +77,7 @@ func CreateSLS(slsfname, linkfname string, full bool) {
 				/// full  details
 				if full {
 					sls = SLSprofile{
-						RxNodeID:  bestlink.Rxid,
+						RxNodeID:  bestlink.RxNodeID,
 						FreqInGHz: itucfg.CarriersGHz, BandwidthMHz: itucfg.BandwidthMHz, N0: N0dB, RSSI: totalrssi,
 						BestRSRP:         vlib.Db(rssi[bestid]),
 						BestRSRPNode:     bestlink.TxID,
@@ -86,20 +85,23 @@ func CreateSLS(slsfname, linkfname string, full bool) {
 						RoIDbm:           vlib.Db(totalrssi - rssi[bestid]),
 						BestCouplingLoss: bestlink.CouplingLoss,
 						AssoTxAg:         bestlink.BSAasgainDB, AssoRxAg: bestlink.UEAasgainDB,
+						BestULsinr: bestlink.CouplingLoss + ueTxPowerdBm - UL_N0dB,
 					}
+					// BestULsinr  assumes single transmission ideal UPlink
 					str, _ = vlib.Struct2String(sls)
 				} else {
 					// small file size.. if less columns are added
 					sls = SLSprofile{
-						RxNodeID:     bestlink.Rxid,
+						RxNodeID:     bestlink.RxNodeID,
 						BestRSRPNode: bestlink.TxID,
 						BestSINR:     maxsinr,
 						AssoTxAg:     bestlink.BSAasgainDB, AssoRxAg: bestlink.UEAasgainDB,
+						BestULsinr: bestlink.CouplingLoss + ueTxPowerdBm - UL_N0dB,
 					}
-					newsls := SubStruct(sls, "RxNodeID", "BestRSRPNode", "BestSINR", "AssoTxAg", "AssoRxAg")
+					newsls := d3.SubStruct(sls, "RxNodeID", "BestRSRPNode", "BestSINR", "BestULsinr", "AssoTxAg", "AssoRxAg")
 					str, _ = vlib.Struct2String(newsls)
 				}
-				fmt.Fprintf(fd, "\n%s", str)
+				fd.WriteString("\n" + str)
 			}
 
 			data = []LinkProfile{}
@@ -112,7 +114,8 @@ func CreateSLS(slsfname, linkfname string, full bool) {
 		// 	fmt.Printf("==")
 
 		// }
-	})
+	}
+	d3.ForEachParse(linkfname, processrow)
 	fmt.Printf("\n")
 
 }
@@ -125,21 +128,21 @@ func CreateMiniLinkProfiles(newfname string, linkfname string) {
 	fd, _ := os.Create(newfname)
 	defer fd.Close()
 
-	nl := SubStruct(LinkProfile{}, "Rxid", "TxID", "CouplingLoss")
+	nl := d3.SubStruct(LinkProfile{}, "RxNodeID", "TxID", "CouplingLoss")
 	str, err := vlib.Struct2HeaderLine(nl)
 	er(err)
 	fd.WriteString("\n" + str)
 	// progress bar
-	TotalLines := itucfg.NumUEperCell * NBs * 19
+	TotalLines := itucfg.NumUEperCell * NBs * simcfg.ActiveUECells
 	bar := progressbar.Default(int64(TotalLines))
 	// step := int(float64(TotalLines*5) / 100.0) // 5%
 	cnt := 0
 
 	finfo, _ := os.Stat(linkfname)
 	fmt.Printf("%d ROWS %vMB\n", TotalLines, finfo.Size()/(1024*1024))
-	ForEachParse(linkfname, func(l LinkProfile) {
+	d3.ForEachParse(linkfname, func(l LinkProfile) {
 
-		nl := SubStruct(l, "Rxid", "TxID", "CouplingLoss")
+		nl := d3.SubStruct(l, "RxNodeID", "TxID", "CouplingLoss")
 		str, err := vlib.Struct2String(nl)
 		er(err)
 		fd.WriteString("\n" + str)
@@ -151,7 +154,7 @@ func CreateMiniLinkProfiles(newfname string, linkfname string) {
 
 // SplitSLSprofileByUEs
 func SplitSLSprofileByUEs(ues []UElocation) {
-	var fds [19]*os.File
+	var fds = make([]*os.File, 19)
 
 	gcells := vlib.NewSegmentI(0, 19)
 	for _, v := range gcells {
@@ -201,7 +204,7 @@ func SplitSLSprofileByCell(newfnamebase, slsfname string, full bool) {
 	}
 	log.Printf("SplitSLSprofileByCell(%s):: %s-cell[0-19]csv (Regenerate from : %s) ", fullstr, newfnamebase, slsfname)
 	var err error
-	var fds [19]*os.File
+	var fds = make([]*os.File, 19)
 	for i := 0; i < 19; i++ {
 
 		fname := fmt.Sprintf(newfnamebase+"-cell%02d.csv", i)
@@ -209,7 +212,7 @@ func SplitSLSprofileByCell(newfnamebase, slsfname string, full bool) {
 		er(err)
 
 		if !full {
-			newsls := SubStruct(SLSprofile{}, "RxNodeID", "BestRSRPNode", "BestSINR", "AssoTxAg", "AssoRxAg")
+			newsls := d3.SubStruct(SLSprofile{}, "RxNodeID", "BestRSRPNode", "BestSINR", "AssoTxAg", "AssoRxAg")
 			headers, _ := vlib.Struct2HeaderLine(newsls)
 			fds[i].WriteString(headers)
 		} else {
@@ -231,10 +234,10 @@ func SplitSLSprofileByCell(newfnamebase, slsfname string, full bool) {
 	var gcellid int = 0
 	var cnt = 0
 	NentriesPerCell := itucfg.NumUEperCell
-	ForEachParse(slsfname, func(l SLSprofile) {
+	d3.ForEachParse(slsfname, func(l SLSprofile) {
 		var str string
 		if !full {
-			newsls := SubStruct(l, "RxNodeID", "BestRSRPNode", "BestSINR", "AssoTxAg", "AssoRxAg")
+			newsls := d3.SubStruct(l, "RxNodeID", "BestRSRPNode", "BestSINR", "AssoTxAg", "AssoRxAg")
 			str, _ = vlib.Struct2String(newsls)
 
 		} else {
@@ -254,8 +257,8 @@ func SplitSLSprofileByCell(newfnamebase, slsfname string, full bool) {
 }
 
 // SplitLinkProfilesByCells linkproperties.csv into linkproperties-cellXX.csv XX=00,01,02,...18
-// with minimal fields "Rxid", "TxID", "CouplingLoss"
-func SplitLinkProfilesByCell(newfnamebase, linkfname string, full bool) {
+// with minimal fields "RxNodeID", "TxID", "CouplingLoss"
+func SplitLinkProfilesByCell(newfnamebase, linkfname string, full bool, filterfn func(l LinkProfile) bool) {
 
 	var fullstr = "full"
 	if !full {
@@ -263,7 +266,7 @@ func SplitLinkProfilesByCell(newfnamebase, linkfname string, full bool) {
 	}
 	log.Printf("SplitLinkProfilesByCell:(%s) : %s-[0-19]csv (Regenerate from : %s) ", fullstr, newfnamebase, linkfname)
 
-	var fds [19]*os.File
+	var fds = make([]*os.File, 19)
 	gcells := vlib.NewSegmentI(0, 19)
 	for _, v := range gcells {
 		// Rxid,txID,distance,IndoorDistance,UEHeight,IsLOS,CouplingLoss,Pathloss,O2I,InCar,ShadowLoss,TxPower,BSAasgainDB,UEAasgainDB,TxGCSaz,TxGCSel,RxGCSaz,RxGCSel
@@ -271,7 +274,7 @@ func SplitLinkProfilesByCell(newfnamebase, linkfname string, full bool) {
 		fds[v], _ = os.Create(fname)
 		var headers string
 		if !full {
-			nlobj := SubStruct(LinkProfile{}, "Rxid", "TxID", "CouplingLoss")
+			nlobj := d3.SubStruct(LinkProfile{}, "RxNodeID", "TxID", "CouplingLoss")
 			headers, _ = vlib.Struct2HeaderLine(nlobj)
 		} else {
 
@@ -284,7 +287,7 @@ func SplitLinkProfilesByCell(newfnamebase, linkfname string, full bool) {
 	}
 
 	// split LinkProperties entries into multiple GCellID
-	TotalLines := itucfg.NumUEperCell * NBs * 19
+	TotalLines := itucfg.NumUEperCell * NBs * simcfg.ActiveUECells
 	// progress := 0
 	// step := int(float64(TotalLines*5) / 100.0) // 5%
 	finfo, _ := os.Stat(linkfname)
@@ -293,27 +296,29 @@ func SplitLinkProfilesByCell(newfnamebase, linkfname string, full bool) {
 	var cnt int = 0
 	NLinksPerCell := itucfg.NumUEperCell * NBs
 	var gcellid int = 0
-	ForEachParse(linkfname, func(l LinkProfile) {
+	d3.ForEachParse(linkfname, func(l LinkProfile) {
 
-		if !full {
-			nl := SubStruct(l, "Rxid", "TxID", "CouplingLoss")
-			str, err := vlib.Struct2String(nl)
-			er(err)
-			fds[gcellid].WriteString("\n" + str)
+		if filterfn == nil || filterfn(l) {
+			if !full {
+				nl := d3.SubStruct(l, "RxNodeID", "TxID", "CouplingLoss")
+				str, err := vlib.Struct2String(nl)
+				er(err)
+				fds[gcellid].WriteString("\n" + str)
 
-		} else {
-			str, err := vlib.Struct2String(l)
-			er(err)
-			fds[gcellid].WriteString("\n" + str)
+			} else {
+				str, err := vlib.Struct2String(l)
+				er(err)
+				fds[gcellid].WriteString("\n" + str)
+			}
+
 		}
-
 		cnt++
 		if cnt%(NLinksPerCell) == 0 {
 			cnt = 0
 			gcellid++
 		}
-		bar.Add(1)
 
+		bar.Add(1)
 	})
 	fmt.Printf("\n")
 	// fmt.Fprintf(fds[0], "%v", selected0)
@@ -326,49 +331,49 @@ func SplitLinkProfilesByCell(newfnamebase, linkfname string, full bool) {
 
 }
 
-// SubStruct creates array of objs with selected properties "fields" from the input array of objects
-func SubStruct(v interface{}, fields ...string) interface{} {
-	// fmt.Printf("\n Input : %#v", v)
-	tOfv := reflect.TypeOf(v)
-	var subfields []reflect.StructField
-	var fnames []string
-	for _, f := range fields {
-		ftype, ok := tOfv.FieldByName(f)
-		if ok {
-			subfields = append(subfields, ftype)
-			fnames = append(fnames, f)
-		}
-	}
-	resultType := reflect.StructOf(subfields)
-	elemVal := reflect.ValueOf(v)
-	result := reflect.New(resultType)
+// // SubStruct creates array of objs with selected properties "fields" from the input array of objects
+// func SubStruct(v interface{}, fields ...string) interface{} {
+// 	// fmt.Printf("\n Input : %#v", v)
+// 	tOfv := reflect.TypeOf(v)
+// 	var subfields []reflect.StructField
+// 	var fnames []string
+// 	for _, f := range fields {
+// 		ftype, ok := tOfv.FieldByName(f)
+// 		if ok {
+// 			subfields = append(subfields, ftype)
+// 			fnames = append(fnames, f)
+// 		}
+// 	}
+// 	resultType := reflect.StructOf(subfields)
+// 	elemVal := reflect.ValueOf(v)
+// 	result := reflect.New(resultType)
 
-	for _, f := range fnames {
-		inpval := elemVal.FieldByName(f)
-		// fmt.Printf("\n\nField  %v is %v ", f, inpval)
-		newfield := result.Elem().FieldByName(f)
-		// fmt.Printf("\nBefore Setting  %v is %#v ", f, newfield)
-		if newfield.CanSet() {
-			newfield.Set(inpval)
-			// fmt.Printf("\nSetting  %v is %#v ", f, newfield)
-		}
+// 	for _, f := range fnames {
+// 		inpval := elemVal.FieldByName(f)
+// 		// fmt.Printf("\n\nField  %v is %v ", f, inpval)
+// 		newfield := result.Elem().FieldByName(f)
+// 		// fmt.Printf("\nBefore Setting  %v is %#v ", f, newfield)
+// 		if newfield.CanSet() {
+// 			newfield.Set(inpval)
+// 			// fmt.Printf("\nSetting  %v is %#v ", f, newfield)
+// 		}
 
-	}
+// 	}
 
-	retobj := result.Elem()
+// 	retobj := result.Elem()
 
-	// fmt.Printf("\n Created : %#v", retobj)
+// 	// fmt.Printf("\n Created : %#v", retobj)
 
-	return retobj.Interface()
-	// for i := 0; i < N; i++ {
-	// 	tOfv.FieldByName()
-	// }
-}
+// 	return retobj.Interface()
+// 	// for i := 0; i < N; i++ {
+// 	// 	tOfv.FieldByName()
+// 	// }
+// }
 
 // SplitUELocations split uelocations.csv based on GCell
 func SplitUELocationsByCell(fname string) {
 	log.Println("SplitUELocationsByCell:", fname)
-	var fds [19]*os.File
+	var fds = make([]*os.File, 19)
 
 	gcells := vlib.NewSegmentI(0, 19)
 	for _, v := range gcells {
@@ -384,15 +389,15 @@ func SplitUELocationsByCell(fname string) {
 	}
 
 	var cnt int = 0
-	bar := progressbar.Default(int64(itucfg.NumUEperCell * 19))
-	ForEachParse(fname, func(u UElocation) {
-		bar.Add(1)
+	bar := progressbar.Default(int64(itucfg.NumUEperCell * simcfg.ActiveUECells))
+	d3.ForEachParse(fname, func(u UElocation) {
+
 		gcell := u.GCellID
 		// fmt.Printf("\n %d [%d]| %v ", cnt, gcell, u)
 		str, err := vlib.Struct2String(u)
 		er(err)
 		fds[gcell].WriteString("\n" + str)
-
+		bar.Add(1)
 		cnt++
 	})
 

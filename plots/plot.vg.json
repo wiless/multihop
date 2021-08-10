@@ -31,12 +31,12 @@
         },
         {
             "data": {
-                "url": "relays.csv"
+                "url": "../results/default/uelocation.csv"
             },
             "mark": "point",
             "encoding": {
                 "size": {
-                    "value": 150
+                    "value": 50
                 },
                 "x": {
                     "field": "X",
@@ -46,19 +46,15 @@
                     "field": "Y",
                     "type": "quantitative"
                 },
-                "stroke": {
-                    "value": "black"
+                "strokeWidth": {
+                    "value": 0
                 },
                 "fill": {
-                    "field": "FreqInGHz",
+                    "field": "GCellID",
+                    "type": "ordinal",
                     "scale": {
                         "type": "ordinal",
-                        "range": [
-                            "red",
-                            "blue",
-                            "black",
-                            "green"
-                        ]
+                        "scheme": "rainbow"
                     }
                 }
             }

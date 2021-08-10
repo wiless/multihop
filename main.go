@@ -20,15 +20,17 @@ import (
 
 // }
 var v3 vlib.VectorIface
-var basedir = "N500/"
+var basedir = "./"
 var myues []UElocation
 var BW float64 // Can be different than itucfg.BandwidthMHz, based on uplink/downlink
-var RxNoisedB float64
+var RxNoisedB, TxNoisedB float64
 var itucfg config.ITUconfig
+var simcfg config.SIMconfig
 var bslocs []BSlocation
-
+var bsTxPowerdBm, ueTxPowerdBm float64
 var NBs int
-var N0 float64 // N0 in linear scale
+var N0, UL_N0 float64 // N0 in linear scale
+var UL_N0dB float64
 
 func init() {
 	flag.StringVar(&basedir, "basedir", "N500/", "Prefix for result files, use as -basedir=results/")
@@ -40,18 +42,34 @@ func init() {
 }
 
 func main() {
+	var err error
+	simcfg, err = config.ReadSIMConfig(basedir + "sim.cfg")
+	er(err)
+	fmt.Println("Active UECells = ", simcfg.ActiveUECells)
 	itucfg, _ = config.ReadITUConfig(basedir + "itu.cfg")
 	// ----
 	LoadCSV("bslocation.csv", &bslocs) // needed ?
 	NBs = len(bslocs)
 
 	BW = itucfg.BandwidthMHz
-	RxNoisedB = itucfg.UENoiseFigureDb         // For Downlink
+	RxNoisedB = itucfg.UENoiseFigureDb // For Downlink
+	TxNoisedB = itucfg.BSNoiseFigureDb // For Uplink
+
 	N0dB := -174 + vlib.Db(BW*1e6) + RxNoisedB // in linear scale
 	N0 = vlib.InvDb(N0dB)
-	fmt.Println("N0 (dB)", N0dB)
 
-	// PrepareInputFiles()
+	UL_N0dB = -174 + vlib.Db(BW*1e6) + TxNoisedB // in linear scale
+	UL_N0 = vlib.InvDb(UL_N0dB)
+
+	bsTxPowerdBm = itucfg.TxPowerDbm
+	ueTxPowerdBm = itucfg.UETxDbm
+
+	fmt.Println("Total Active Sectors ", NBs)
+
+	fmt.Println("DL : N0 (dB)", N0dB)
+	fmt.Println("UL : N0 (dB)", UL_N0dB)
+
+	PrepareInputFiles()
 
 	// Finding relays
 	// FindRelays(basedir+"relaylocations.csv", 0.01) // 1% as relays
@@ -73,7 +91,7 @@ func EvalauteMetricRelay(rx UElocation, tx RelayNode) LinkProfile {
 	dest := vlib.Location3D{rx.X, rx.Y, rx.Z}
 
 	newlink := LinkProfile{
-		Rxid:     rx.ID,
+		RxNodeID: rx.ID,
 		TxID:     tx.ID,
 		Distance: dest.DistanceFrom(src),
 		UEHeight: rx.Z,
@@ -106,7 +124,7 @@ func FindRelays(fname string, percentage float64) {
 	fd.WriteString(header)
 
 	NRelayPerCell := int(float64(itucfg.NumUEperCell) * percentage)
-	NCells := 19
+	NCells := simcfg.ActiveUECells
 	// TotalRelays := NRelayPerCell * NCells
 	NRelayChannels := 4 /// = Total channels -1  (Channel 0 reserved for BS)
 
@@ -121,16 +139,21 @@ func FindRelays(fname string, percentage float64) {
 		outdoorues := d3.Filter(ues, func(ue UElocation) bool {
 			return !ue.Indoor
 		}).([]UElocation)
+		if len(outdoorues) < NRelayPerCell {
+			fmt.Println("Skipping Cell ", cell)
+			break
+		}
 		outdooruesids := d3.FlatMap(outdoorues, "ID")
 
 		sls := LoadSLSprofile(baseslsfile + fmt.Sprintf("-cell%02d.csv", cell))
 		var potential vlib.VectorI
-		relaysls := d3.Filter(sls, func(indx int, s SLSprofile) bool {
+
+		d3.ForEach(sls, func(indx int, s SLSprofile) bool {
 			found := false
 			if s.BestSINR > 10 {
 				found, _ = vlib.Contains(outdooruesids, s.RxNodeID)
 				if found {
-					sls[indx].FreqInGHz = -1
+					// sls[indx].FreqInGHz = -1
 					potential.AppendAtEnd(s.RxNodeID)
 				}
 
@@ -138,13 +161,14 @@ func FindRelays(fname string, percentage float64) {
 			return found
 
 		})
-		_ = relaysls
 
 		_, indx := vlib.RandUFVec(len(outdoorues)).Sorted2()
+		rand.Shuffle(len(outdoorues), func(i, j int) {
+			outdoorues[i], outdoorues[j] = outdoorues[j], outdoorues[i]
+		})
 
 		relays := make([]RelayNode, NRelayPerCell)
 		for i := 0; i < NRelayPerCell; i++ {
-
 			relays[i].UElocation = outdoorues[indx[i]]
 			// Unassigned Beacon Frequency =-1
 			relays[i].FrequencyGHz = -1
@@ -214,14 +238,54 @@ func FindRelays(fname string, percentage float64) {
 }
 
 func PrepareInputFiles() {
-	// for i := 0; i < 100; i++ {
 
 	SplitUELocationsByCell(basedir + "uelocation.csv")
 	CreateSLS(basedir+"newsls.csv", basedir+"linkproperties.csv", true)            // Regenerate SLS full
 	CreateSLS(basedir+"newsls-mini.csv", basedir+"linkproperties.csv", false)      // Regenerate SLS mini
 	SplitSLSprofileByCell(basedir+"newsls-mini", basedir+"newsls-mini.csv", false) // Split SLS by Cell
 	CreateMiniLinkProfiles(basedir+"linkproperties-mini.csv", basedir+"linkproperties.csv")
-	SplitLinkProfilesByCell(basedir+"linkmini", basedir+"linkproperties.csv", false)
 
-	// }
+	SplitLinkProfilesByCell(basedir+"linkmini", basedir+"linkproperties.csv", false, nil)
+	ULInterference()
+
+}
+
+func ULInterference() {
+
+	slsprofile := LoadSLSprofile(basedir + "newsls-mini.csv")
+	ActiveBSCells := simcfg.ActiveBSCells
+	// selectedCell := 0
+	fd, _ := os.Create(basedir + "linkproperties-mini-filtered.csv")
+	// newsl := d3.SubStruct(LinkProfile{}, "RxNodeID", "TxID", "CouplingLoss")
+	type n struct {
+		RxNodeID, TxID int
+		CouplingLoss   float64
+		BestRSRPNode   int
+	}
+
+	header, _ := vlib.Struct2HeaderLine(n{})
+	fd.WriteString(header)
+	pbar := progressbar.Default(int64(itucfg.NumUEperCell) * int64(NBs))
+
+	fn := func(l LinkProfile) bool {
+		gcell := (l.TxID%ActiveBSCells == 0) // 0,128,256 => GCELL 0 |  1,129,257=> GCELL=1 NBs/3-CELLS, NBs-Sectors
+
+		if gcell {
+			associatedBS := slsprofile[l.RxNodeID-NBs].BestRSRPNode
+			//	if l.TxID != associatedBS {
+
+			// fmt.Printf("\nData %v > SLS = %d?", l.RxNodeID, slsprofile[l.RxNodeID-383-1].RxNodeID)
+
+			newsl := n{l.RxNodeID, l.TxID, l.CouplingLoss, associatedBS}
+			// newsl := d3.SubStruct(l, "RxNodeID", "TxID", "CouplingLoss")
+			str, _ := vlib.Struct2String(newsl)
+			fd.WriteString("\n" + str)
+			return true
+			//}
+		}
+		pbar.Add(1)
+		return false
+	}
+	d3.ForEachParse(basedir+"linkproperties-mini.csv", fn)
+
 }

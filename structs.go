@@ -1,12 +1,8 @@
 package main
 
 import (
-	"encoding/csv"
-	"fmt"
-	"io"
 	"log"
 	"os"
-	"reflect"
 
 	"github.com/jszwec/csvutil"
 )
@@ -36,12 +32,13 @@ type SLSprofile struct {
 	BestRSRPNode                                                             int
 	BestSINR, RoIDbm, BestCouplingLoss, MaxTxAg, MaxRxAg, AssoTxAg, AssoRxAg float64
 	MaxTransmitBeamID                                                        int
+	BestULsinr                                                               float64
 }
 
 type LinkProfile struct {
-	Rxid                                                                                                                  int
-	TxID                                                                                                                  int     `csv:"txID"`
-	Distance                                                                                                              float64 `csv:"distance"`
+	RxNodeID                                                                                                              int
+	TxID                                                                                                                  int
+	Distance                                                                                                              float64
 	IndoorDistance, UEHeight                                                                                              float64
 	IsLOS                                                                                                                 bool
 	CouplingLoss, Pathloss, O2I, InCar, ShadowLoss, TxPower, BSAasgainDB, UEAasgainDB, TxGCSaz, TxGCSel, RxGCSaz, RxGCSel float64
@@ -115,94 +112,4 @@ func LoadUELocations(fname string) []UElocation {
 
 	fid.Close()
 	return ues
-}
-
-func ForEachParse(fname string, fn interface{}) {
-
-	// log.Printf("\n ForEach()..")
-	tOffn := reflect.TypeOf(fn)
-
-	fnVal := reflect.ValueOf(fn)
-
-	// resultValue := reflect.MakeSlice(tOfArray, 0, avalue.Cap())
-
-	// fmt.Printf("\n INPUT = arg1 = %v and arg2 =  %v  ", tOfArray, tOffn)
-	// fmt.Printf("\n Kind arg1 %s ", tOfArray.Kind())
-	// fmt.Printf("\n Kind arg2  %s ", tOffn.Kind())
-
-	// fmt.Printf("\n ARRAY of type %s ", elemType)
-	// fmt.Printf("\n Value / Handle of Function   %v ", fnVal)
-	// fmt.Printf("\n Fn : Input Args:%d =", tOffn.NumIn())
-	// for i := 0; i < tOffn.NumIn(); i++ {
-	// 	fmt.Printf("\t %d=>%v,", i, tOffn.In(i))
-	// }
-	// fmt.Printf("\n Fn : Output Args:%d =", tOffn.NumOut())
-	// for i := 0; i < tOffn.NumOut(); i++ {
-	// 	fmt.Printf("\t %d=>%v,", i, tOffn.Out(i))
-	// }
-
-	if tOffn.NumIn() == 0 {
-		fmt.Println("ForEach needs Fn with 1 or 2 input args")
-		return
-	}
-
-	var fnType int = 1
-	/// Function Argument must match Element type of the Array {
-	if tOffn.NumIn() == 1 {
-		fnType = 1
-		// fmt.Printf("\nFunction TYPE 1 : (elem) : Element Type %v matches with Fn arg1 %v", elemType, tOffn.In(0), tOffn.In(1))
-	} else if tOffn.NumIn() == 2 && tOffn.In(0).Kind() == reflect.Int {
-		// Expect second argument of type "struct"
-		fnType = 2
-		// fmt.Printf("\nFunction TYPE 2 : (ind,elem)  : Element Type %v matches with Fn arg2 %v, arg 1=%v", elemType, tOffn.In(1), tOffn.In(0))
-	} else {
-		// fmt.Printf("\nError : Array Element %v DOES NOT MATCH with Fn arg %v", elemType, tOffn.In(0))
-		return
-	}
-
-	var elemType reflect.Type
-	elemType = tOffn.In(0)
-
-	fd, err := os.Open(fname)
-	er(err)
-	csvReader := csv.NewReader(fd)
-
-	dec, err := csvutil.NewDecoder(csvReader)
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	header := dec.Header()
-	_ = header
-	var i int = 0
-	// _ = fnVal
-	elemValue := reflect.New(elemType)
-	// fmt.Printf("\nType of Fn Arg is %v", elemType)
-	// fmt.Printf("\nType of New Variable is %v | kind =%v", elemValue.Type(), elemType.Kind())
-
-	for {
-
-		// u := User{OtherData: make(map[string]string)}
-		// element := reflect.New()
-
-		u := elemValue.Interface()
-
-		if err := dec.Decode(u); err == io.EOF {
-			break
-		} else if err != nil {
-			log.Fatal(err)
-		}
-		// fmt.Printf("\nRead File : %#v", u)
-		obj := elemValue.Elem()
-		// fmt.Printf("\n OBJ %#v", obj)
-		if fnType == 1 {
-			fnVal.Call([]reflect.Value{obj})
-		} else {
-			var indx = reflect.ValueOf(i)
-			fnVal.Call([]reflect.Value{indx, obj})
-			i++
-		}
-
-	}
-
 }
