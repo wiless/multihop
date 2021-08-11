@@ -59,7 +59,38 @@
             }
         }
         // loadme();
+        loadulsinr()
+        async function loadulsinr() {
+            d3.csv("../results/default/ulsinr.csv", d3.autoType).then(d => {
+                var ulsinr = d;
 
+                var el1 = Plot.plot({
+                    grid: true,
+                    color: { domain: ["snap", "ideal", "mean"], range: ["red", "green", "blue"] },
+                    marks: [
+                        Plot.line(ulsinr, Plot.binX({ y: "proportion" }, { cumulative: true, x: "SINRsnap", stroke: "red" })),
+                        Plot.line(ulsinr, Plot.binX({ y: "proportion" }, { cumulative: true, x: "SINRideal", stroke: "green" })),
+                        Plot.line(ulsinr, Plot.binX({ y: "proportion" }, { cumulative: true, x: "SINRmean", stroke: "blue" }))
+                    ]
+                });
+                document.querySelector("#plot").appendChild(el1);
+
+                const el1domain = d3.extent(ulsinr, d => d.BestRSRPNode);
+                const el1legend = legend({
+                    color: d3.scaleOrdinal(["snap", "ideal", "mean"], ["red", "green", "blue"]),
+                    title: "Type",
+                    tickSize: 5,
+                    height: 43,
+
+                });
+                document.querySelector("#plot").appendChild(el1legend);
+            }
+
+            );
+
+
+
+        }
         function CalculateSINR() {
 
 

@@ -3,10 +3,12 @@ package main
 import (
 	"flag"
 	"fmt"
+	"log"
 	"math"
 	"math/rand"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/5gif/config"
 	"github.com/schollz/progressbar"
@@ -29,8 +31,15 @@ var simcfg config.SIMconfig
 var bslocs []BSlocation
 var bsTxPowerdBm, ueTxPowerdBm float64
 var NBs int
+var ActiveBSCells int
 var N0, UL_N0 float64 // N0 in linear scale
 var UL_N0dB float64
+
+var Er = func(err error) {
+	if err != nil {
+		log.Println("Error ", err)
+	}
+}
 
 func init() {
 	flag.StringVar(&basedir, "basedir", "N500/", "Prefix for result files, use as -basedir=results/")
@@ -38,13 +47,15 @@ func init() {
 	if !(strings.HasSuffix(basedir, "/") || strings.HasSuffix(basedir, "\\")) {
 		basedir += "/"
 	}
-	// rand.Seed(time.Now().Unix())
+	rand.Seed(time.Now().Unix())
 }
 
 func main() {
 	var err error
 	simcfg, err = config.ReadSIMConfig(basedir + "sim.cfg")
 	er(err)
+	ActiveBSCells = simcfg.ActiveBSCells
+	fmt.Println("Active BSCells = ", simcfg.ActiveBSCells)
 	fmt.Println("Active UECells = ", simcfg.ActiveUECells)
 	itucfg, _ = config.ReadITUConfig(basedir + "itu.cfg")
 	// ----
@@ -69,7 +80,96 @@ func main() {
 	fmt.Println("DL : N0 (dB)", N0dB)
 	fmt.Println("UL : N0 (dB)", UL_N0dB)
 
-	PrepareInputFiles()
+	// PrepareInputFiles()
+
+	// Find Interfering Cells
+	result := CreateICellInfo(basedir + "linkproperties-mini-filtered.csv")
+
+	MeanIPerSectordBm := GetMeanInterference(result)
+
+	NActive := rand.Intn(ActiveBSCells*3 - 1)
+	// NActive = ActiveBSCells*3 - 1 // ???
+
+	seq := vlib.NewSegmentI(0, ActiveBSCells*3)
+	rand.Shuffle(seq.Len(), func(i, j int) {
+		seq[i], seq[j] = seq[j], seq[i]
+	})
+
+	SnapShotIPerSectordBm := GetSnapShotInterference(result, seq[0:NActive]...)
+	fmt.Printf("\n MeanIPerSectordBm     %#v", MeanIPerSectordBm)
+	fmt.Printf("\n SnapShotIPerSectordBm %#v", SnapShotIPerSectordBm)
+	fmt.Printf("\n Active I Sectors %d :  %#v\n", NActive, seq[0:NActive])
+
+	// Cell 0 users..
+
+	var Cell0Sec0Users, Cell0Sec1Users, Cell0Sec2Users vLinkFiltered
+	Cell0Sec0Users = make(vLinkFiltered, 0)
+	Cell0Sec1Users = make(vLinkFiltered, 0)
+	Cell0Sec2Users = make(vLinkFiltered, 0)
+	pbar := progressbar.Default(3 * int64(simcfg.ActiveUECells) * int64(itucfg.NumUEperCell))
+	CenterCellusers := make(vLinkFiltered, 0)
+	fn := func(l LinkFiltered) {
+
+		if math.Mod(float64(l.BestRSRPNode), float64(ActiveBSCells)) == 0 && l.BestRSRPNode == l.TxID {
+			CenterCellusers = append(CenterCellusers, l)
+
+		}
+		if l.BestRSRPNode == 0 && l.TxID == 0 {
+			// fmt.Printf("Processing %v ", l)
+			Cell0Sec0Users = append(Cell0Sec0Users, l)
+		}
+		if l.BestRSRPNode == ActiveBSCells && l.TxID == ActiveBSCells {
+			Cell0Sec1Users = append(Cell0Sec1Users, l)
+		}
+		if l.BestRSRPNode == 2*ActiveBSCells && l.TxID == 2*ActiveBSCells {
+			Cell0Sec2Users = append(Cell0Sec2Users, l)
+		}
+		pbar.Add(1)
+	}
+
+	d3.ForEachParse(basedir+"linkproperties-mini-filtered.csv", fn)
+
+	// fmt.Printf("Cell 0 - Sector 0 Users  :%#v ", Cell0Sec0Users)
+	// calcSINR := func(lp LinkFiltered) float64 {
+	// 	// fmt.Printf("\n %#v", lp)
+	// 	signal := lp.CouplingLoss + ueTxPowerdBm
+	// 	inter := MeanIPerSectordBm[lp.BestRSRPNode]
+	// 	_ = inter
+	// 	SIR := signal - inter
+	// 	return SIR
+	// }
+	// sinr0 := d3.Map(Cell0Sec0Users, calcSINR).([]float64)
+	// sinr1 := d3.Map(Cell0Sec1Users, calcSINR).([]float64)
+	// sinr2 := d3.Map(Cell0Sec2Users, calcSINR).([]float64)
+
+	type SINRInfo struct {
+		RxNodeID     int
+		BestRSRPNode int
+		SINRmean     float64
+		SINRsnap     float64
+		SINRideal    float64
+	}
+
+	fd, er := os.Create(basedir + "ulsinr.csv")
+	defer fd.Close()
+	fmt.Print(er)
+	header, _ := vlib.Struct2HeaderLine(SINRInfo{})
+	fd.WriteString(header)
+
+	d3.ForEach(CenterCellusers, func(lp LinkFiltered) {
+		signal := lp.CouplingLoss + ueTxPowerdBm
+
+		SINRmean := signal - MeanIPerSectordBm[lp.BestRSRPNode]         // UL_N0dB need to be added
+		SINRsnapshot := signal - SnapShotIPerSectordBm[lp.BestRSRPNode] // UL_N0dB need to be added
+		SINRideal := signal - UL_N0dB
+		info := SINRInfo{RxNodeID: lp.RxNodeID, BestRSRPNode: lp.BestRSRPNode, SINRmean: SINRmean, SINRsnap: SINRsnapshot, SINRideal: SINRideal}
+		infostr, _ := vlib.Struct2String(info)
+		fd.WriteString("\n" + infostr)
+	})
+
+	// fmt.Printf("\nSIR0mean=%f", len(sinr0), sinr0)
+	// fmt.Printf("\nSIR1mean=%f", len(sinr1), sinr1)
+	// fmt.Printf("\nSIR2mean=%f", len(sinr2), sinr2)
 
 	// Finding relays
 	// FindRelays(basedir+"relaylocations.csv", 0.01) // 1% as relays
@@ -78,162 +178,63 @@ func main() {
 	// bsalias := d3.FlatMap(bslocs, "Alias")
 	// _ = bsalias
 
-	GenerateRelayLinkProps()
-
-}
-func GenerateRelayLinkProps() {
+	// GenerateRelayLinkProps()
 
 }
 
-func EvalauteMetricRelay(rx UElocation, tx RelayNode) LinkProfile {
+func GetSnapShotInterference(linkinfo map[int]CellMap, activeSectors ...int) map[int]float64 {
+	SnapShotIPerSectordBm := make(map[int]float64)
+	for sector, _ := range linkinfo {
+		// fmt.Printf("\n Current Sector %d", sector)
+		var snapShotI float64
+		SnapShotIPerSectordBm[sector] = -1000
+		for _, k := range activeSectors {
+			v, ok := linkinfo[sector][k]
+			if ok && k != sector {
+				// fmt.Printf("\nActive Interfering Sector %d , with %d  NUEs", k, len(v))
+				picked := v[rand.Intn(len(v))]
+				// fmt.Printf("\n Picked User %d | %v ", picked.RxNodeID, picked)
+				// closs := picked.CouplingLoss
+				snapShotI += vlib.InvDb(picked.CouplingLoss + itucfg.UETxDbm)
+			}
 
-	src := vlib.Location3D{tx.X, tx.Y, tx.Z}
-	dest := vlib.Location3D{rx.X, rx.Y, rx.Z}
+		}
+		if snapShotI != 0 {
+			SnapShotIPerSectordBm[sector] = vlib.Db(snapShotI)
+		}
 
-	newlink := LinkProfile{
-		RxNodeID: rx.ID,
-		TxID:     tx.ID,
-		Distance: dest.DistanceFrom(src),
-		UEHeight: rx.Z,
+		fmt.Printf("\n Sector %d :  SnapShotInterference   dBm = %v @ %v UETxpower  ", sector, SnapShotIPerSectordBm[sector], itucfg.UETxDbm)
 	}
-	// IsLOS:
-	// CouplingLoss, Pathloss, O2I, InCar, ShadowLoss, TxPower, BSAasgainDB, UEAasgainDB, TxGCSaz, TxGCSel, RxGCSaz, RxGCSel
-	var indoordist = 0.0
-	if rx.Indoor {
-		indoordist = 25.0 * rand.Float64() // Assign random indoor distance  See Table 7.4.3-2
-	}
+	return SnapShotIPerSectordBm
 
-	newlink.IndoorDistance = indoordist
-	newlink.IsLOS = IsLOS(newlink.Distance) // @Todo
-	// newlink.Pathloss = // @Todo
-	// newlink.CouplingLoss = // @Todo
-
-	newlink.TxPower = 23.0
-	newlink.BSAasgainDB = 0
-	return newlink
 }
 
-func FindRelays(fname string, percentage float64) {
+func GetMeanInterference(linkinfo map[int]CellMap) map[int]float64 {
+	MeanIPerSectordBm := make(map[int]float64)
+	for sector, _ := range linkinfo {
+		fmt.Printf("\n Current Sector %d", sector)
+		var meanI float64
+		MeanIPerSectordBm[sector] = -1000
+		for i := 0; i < NBs; i++ {
+			k := i
+			v, ok := linkinfo[sector][k]
+			if ok && i%61 != 0 {
+				// fmt.Printf("\nISector ID %d | NUEs = %v", k, len(v))
+				closs := d3.Map(v, func(lf LinkFiltered) float64 {
+					return lf.CouplingLoss + itucfg.UETxDbm
 
-	fd, err := os.Create(fname)
-	er(err)
-	defer fd.Close()
-	fmt.Printf("\nFindRelay : %s\n", fname)
-
-	header, _ := vlib.Struct2HeaderLine(RelayNode{})
-	fd.WriteString(header)
-
-	NRelayPerCell := int(float64(itucfg.NumUEperCell) * percentage)
-	NCells := simcfg.ActiveUECells
-	// TotalRelays := NRelayPerCell * NCells
-	NRelayChannels := 4 /// = Total channels -1  (Channel 0 reserved for BS)
-
-	baseuefile := basedir + "uelocation"
-	baseslsfile := basedir + "newsls-mini"
-
-	// cellbar := progressbar.New(NCells)
-	cellbar := progressbar.Default(int64(NCells), "Working on Cell")
-
-	for cell := 0; cell < NCells; cell++ {
-		ues := LoadUELocations(baseuefile + fmt.Sprintf("-cell%02d.csv", cell))
-		outdoorues := d3.Filter(ues, func(ue UElocation) bool {
-			return !ue.Indoor
-		}).([]UElocation)
-		if len(outdoorues) < NRelayPerCell {
-			fmt.Println("Skipping Cell ", cell)
-			break
-		}
-		outdooruesids := d3.FlatMap(outdoorues, "ID")
-
-		sls := LoadSLSprofile(baseslsfile + fmt.Sprintf("-cell%02d.csv", cell))
-		var potential vlib.VectorI
-
-		d3.ForEach(sls, func(indx int, s SLSprofile) bool {
-			found := false
-			if s.BestSINR > 10 {
-				found, _ = vlib.Contains(outdooruesids, s.RxNodeID)
-				if found {
-					// sls[indx].FreqInGHz = -1
-					potential.AppendAtEnd(s.RxNodeID)
-				}
-
-			}
-			return found
-
-		})
-
-		_, indx := vlib.RandUFVec(len(outdoorues)).Sorted2()
-		rand.Shuffle(len(outdoorues), func(i, j int) {
-			outdoorues[i], outdoorues[j] = outdoorues[j], outdoorues[i]
-		})
-
-		relays := make([]RelayNode, NRelayPerCell)
-		for i := 0; i < NRelayPerCell; i++ {
-			relays[i].UElocation = outdoorues[indx[i]]
-			// Unassigned Beacon Frequency =-1
-			relays[i].FrequencyGHz = -1
-
-			// random between 1 to 4, ZERO is for basestation
-			// relays[i].FrequencyGHz = float64(rand.Intn(NRelayChannels)) + 1
-		}
-
-		/// UNCOMMENT -- START to DISABLE OPTIMAL assignment
-		// APPROACH FOR OPTIMIZED Frequency Assignment
-		/// Assign Frequency | Optimize Frequency Assignment based on distance..
-		NclustersPerFrequency := math.Floor(float64(NRelayPerCell) / float64(NRelayChannels))
-		extraCluster := NRelayPerCell % NRelayChannels
-
-		for f := 1; f <= NRelayChannels; f++ {
-
-			var NumRelaysInF = int(NclustersPerFrequency) + extraCluster
-			// for c := 0; c < NumRelaysInF; c++ {
-			// fmt.Printf("\n\n Freq=%d | Relays in this Freq %d", f, NumRelaysInF)
-			// if c == 0 {
-			srcindx := d3.FindFirstIndex(relays, func(r RelayNode) bool {
-				return r.FrequencyGHz == -1 // Find the first UNASSIGNED relay
-			})
-
-			relays[srcindx].FrequencyGHz = float64(f)
-			src := relays[srcindx]
-			// fmt.Printf("==> first relay %#v ", src)
-			// Returns true if the current relay node is the Farthest from firstrelay
-			distance := make([]float64, (NRelayPerCell))
-			srcloc := vlib.Location3D{src.X, src.Y, src.Z}
-			for iter, v := range relays {
-				var d float64
-				d = math.Inf(+1)
-				if v.ID != src.ID && v.FrequencyGHz == -1 { /// If not src!=dest and already no frequency assigned
-					destloc := vlib.Location3D{v.X, v.Y, v.Z}
-					d = srcloc.DistanceFrom(destloc)
-				}
-				distance[iter] = d
-			}
-			sdistance, sindex := vlib.Sorted(distance)
-
-			cnt := 0
-			for d := sdistance.Len() - 1; d >= 0; d-- {
-				if !math.IsInf(sdistance[d], +1) && cnt < NumRelaysInF-1 {
-					relays[sindex[d]].FrequencyGHz = float64(f)
-					cnt++
-				}
+				}).([]float64)
+				meanI += vlib.Mean(vlib.InvDbF(closs))
 			}
 
-			if extraCluster > 0 {
-				extraCluster--
-			}
-		}
-		/// UNCOMMENT -- END to DISABLE OPTIMAL assignment
-		ids := d3.FlatMap(relays, "ID").([]int)
-		sids, idx := vlib.SortedI(ids)
-		_ = sids
-		for _, v := range idx {
-			str, _ := vlib.Struct2String(relays[v])
-			fd.WriteString("\n" + str)
-			// fmt.Printf("\n Random %#v", v)
 		}
 
-		cellbar.Add(1)
+		if meanI != 0 {
+			MeanIPerSectordBm[sector] = vlib.Db(meanI)
+		}
+		fmt.Printf("\n Sector %d : Mean Inteference dBm = %v  ", sector, MeanIPerSectordBm[sector])
 	}
+	return MeanIPerSectordBm
 
 }
 
@@ -246,24 +247,25 @@ func PrepareInputFiles() {
 	CreateMiniLinkProfiles(basedir+"linkproperties-mini.csv", basedir+"linkproperties.csv")
 
 	SplitLinkProfilesByCell(basedir+"linkmini", basedir+"linkproperties.csv", false, nil)
-	ULInterference()
+	CreateULInterferenceLinks(basedir + "linkproperties-mini-filtered.csv")
 
 }
 
-func ULInterference() {
+type LinkFiltered struct {
+	RxNodeID, TxID int
+	CouplingLoss   float64
+	BestRSRPNode   int
+}
+
+func CreateULInterferenceLinks(fname string) {
 
 	slsprofile := LoadSLSprofile(basedir + "newsls-mini.csv")
 	ActiveBSCells := simcfg.ActiveBSCells
 	// selectedCell := 0
-	fd, _ := os.Create(basedir + "linkproperties-mini-filtered.csv")
+	fd, _ := os.Create(fname)
 	// newsl := d3.SubStruct(LinkProfile{}, "RxNodeID", "TxID", "CouplingLoss")
-	type n struct {
-		RxNodeID, TxID int
-		CouplingLoss   float64
-		BestRSRPNode   int
-	}
 
-	header, _ := vlib.Struct2HeaderLine(n{})
+	header, _ := vlib.Struct2HeaderLine(LinkFiltered{})
 	fd.WriteString(header)
 	pbar := progressbar.Default(int64(itucfg.NumUEperCell) * int64(NBs))
 
@@ -276,7 +278,7 @@ func ULInterference() {
 
 			// fmt.Printf("\nData %v > SLS = %d?", l.RxNodeID, slsprofile[l.RxNodeID-383-1].RxNodeID)
 
-			newsl := n{l.RxNodeID, l.TxID, l.CouplingLoss, associatedBS}
+			newsl := LinkFiltered{l.RxNodeID, l.TxID, l.CouplingLoss, associatedBS}
 			// newsl := d3.SubStruct(l, "RxNodeID", "TxID", "CouplingLoss")
 			str, _ := vlib.Struct2String(newsl)
 			fd.WriteString("\n" + str)
@@ -287,5 +289,63 @@ func ULInterference() {
 		return false
 	}
 	d3.ForEachParse(basedir+"linkproperties-mini.csv", fn)
+
+}
+
+type vLinkFiltered []LinkFiltered
+type CellMap map[int]vLinkFiltered
+
+func CreateICellInfo(fname string) map[int]CellMap {
+	result := make(map[int]CellMap)
+	var Cell0Sec0, Cell0Sec1, Cell0Sec2 vLinkFiltered
+	Cell0Sec0 = make(vLinkFiltered, 0)
+	Cell0Sec1 = make(vLinkFiltered, 0)
+	Cell0Sec2 = make(vLinkFiltered, 0)
+
+	fmt.Println(3*int64(simcfg.ActiveUECells)*int64(itucfg.NumUEperCell), "to process")
+	pbar := progressbar.Default(3 * int64(simcfg.ActiveUECells) * int64(itucfg.NumUEperCell))
+	fn := func(l LinkFiltered) {
+		if l.TxID == 0 && l.BestRSRPNode != 0 {
+			// fmt.Printf("Processing %v ", l)
+
+			Cell0Sec0 = append(Cell0Sec0, l)
+		}
+		if l.TxID == ActiveBSCells && l.BestRSRPNode != ActiveBSCells {
+			Cell0Sec1 = append(Cell0Sec1, l)
+		}
+		if l.TxID == 2*ActiveBSCells && l.BestRSRPNode != 2*ActiveBSCells {
+			Cell0Sec2 = append(Cell0Sec2, l)
+		}
+		pbar.Add(1)
+	}
+
+	d3.ForEachParse(fname, fn)
+
+	result[0] = make(CellMap)
+	d3.ForEach(Cell0Sec0, func(l LinkFiltered) {
+		tmp := result[0][l.BestRSRPNode]
+		tmp = append(tmp, l)
+		result[0][l.BestRSRPNode] = tmp
+	})
+
+	result[ActiveBSCells] = make(CellMap)
+	d3.ForEach(Cell0Sec1, func(l LinkFiltered) {
+		tmp := result[ActiveBSCells][l.BestRSRPNode]
+		tmp = append(tmp, l)
+		result[ActiveBSCells][l.BestRSRPNode] = tmp
+	})
+
+	result[2*ActiveBSCells] = make(CellMap)
+	d3.ForEach(Cell0Sec2, func(l LinkFiltered) {
+		tmp := result[2*ActiveBSCells][l.BestRSRPNode]
+		tmp = append(tmp, l)
+		result[ActiveBSCells*2][l.BestRSRPNode] = tmp
+	})
+
+	fmt.Printf("\n \n Processing %#v \n %#v \n %#v", len(Cell0Sec0), len(Cell0Sec1), len(Cell0Sec2))
+	return result
+}
+
+func CreateSectorInterfers(fname string) {
 
 }

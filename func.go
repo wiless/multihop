@@ -56,7 +56,7 @@ func CreateSLS(slsfname, linkfname string, full bool) {
 			var sinrvalues []float64
 			var rssi []float64
 			for _, v := range data {
-				tmp := vlib.InvDb(v.CouplingLoss + v.TxPower)
+				tmp := vlib.InvDb(v.CouplingLoss + bsTxPowerdBm)
 				totalrssi += tmp
 				rssi = append(rssi, tmp)
 				sinrvalues = append(sinrvalues, tmp)
