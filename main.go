@@ -3,7 +3,7 @@ package main
 import (
 	"flag"
 	"fmt"
-	"log"
+
 	"math"
 	"math/rand"
 	"os"
@@ -12,6 +12,7 @@ import (
 
 	"github.com/5gif/config"
 	"github.com/schollz/progressbar"
+	log "github.com/sirupsen/logrus"
 	"github.com/wiless/d3"
 	"github.com/wiless/vlib"
 )
@@ -21,7 +22,7 @@ import (
 // 	//	LoadUELocations("uelocation.csv")
 
 // }
-var v3 vlib.VectorIface
+
 var basedir = "./"
 var myues []UElocation
 var BW float64 // Can be different than itucfg.BandwidthMHz, based on uplink/downlink
@@ -40,18 +41,26 @@ var Er = func(err error) {
 		log.Println("Error ", err)
 	}
 }
+var err error
+
+var GENERATE bool
+var FINDRELAYS bool
 
 func init() {
 	flag.StringVar(&basedir, "basedir", "N500/", "Prefix for result files, use as -basedir=results/")
+	flag.BoolVar(&GENERATE, "generate", false, "Generate files ? usage as -GENERATE true")
+	flag.BoolVar(&FINDRELAYS, "relays", false, "Identify relays ? usage as -relays true")
+
 	flag.Parse()
 	if !(strings.HasSuffix(basedir, "/") || strings.HasSuffix(basedir, "\\")) {
 		basedir += "/"
 	}
 	rand.Seed(time.Now().Unix())
+	log.Info("Setting BASEDIR ", basedir)
+	log.Info("Generating Enabled ", GENERATE)
 }
 
-func main() {
-	var err error
+func loadSysParams() {
 	simcfg, err = config.ReadSIMConfig(basedir + "sim.cfg")
 	er(err)
 	ActiveBSCells = simcfg.ActiveBSCells
@@ -59,7 +68,7 @@ func main() {
 	fmt.Println("Active UECells = ", simcfg.ActiveUECells)
 	itucfg, _ = config.ReadITUConfig(basedir + "itu.cfg")
 	// ----
-	LoadCSV("bslocation.csv", &bslocs) // needed ?
+	d3.CSV(basedir+"bslocation.csv", &bslocs) // needed ?
 	NBs = len(bslocs)
 
 	BW = itucfg.BandwidthMHz
@@ -79,8 +88,30 @@ func main() {
 
 	fmt.Println("DL : N0 (dB)", N0dB)
 	fmt.Println("UL : N0 (dB)", UL_N0dB)
+}
 
-	// PrepareInputFiles()
+func main() {
+	loadSysParams()
+	if GENERATE {
+		PrepareInputFiles()
+	}
+
+	CreateSINRTable()
+
+	if FINDRELAYS {
+		// Finding relays
+		FindRelays(basedir+"relaylocations.csv", 0.01) // 1% as relays
+
+		//BS Information
+		// bsalias := d3.FlatMap(bslocs, "Alias")
+		// _ = bsalias
+
+		GenerateRelayLinkProps()
+	}
+
+}
+
+func CreateSINRTable() {
 
 	// Find Interfering Cells
 	result := CreateICellInfo(basedir + "linkproperties-mini-filtered.csv")
@@ -89,7 +120,6 @@ func main() {
 
 	NActive := rand.Intn(ActiveBSCells*3 - 1)
 	// NActive = ActiveBSCells*3 - 1 // ???
-
 	seq := vlib.NewSegmentI(0, ActiveBSCells*3)
 	rand.Shuffle(seq.Len(), func(i, j int) {
 		seq[i], seq[j] = seq[j], seq[i]
@@ -166,20 +196,6 @@ func main() {
 		infostr, _ := vlib.Struct2String(info)
 		fd.WriteString("\n" + infostr)
 	})
-
-	// fmt.Printf("\nSIR0mean=%f", len(sinr0), sinr0)
-	// fmt.Printf("\nSIR1mean=%f", len(sinr1), sinr1)
-	// fmt.Printf("\nSIR2mean=%f", len(sinr2), sinr2)
-
-	// Finding relays
-	// FindRelays(basedir+"relaylocations.csv", 0.01) // 1% as relays
-
-	//BS Information
-	// bsalias := d3.FlatMap(bslocs, "Alias")
-	// _ = bsalias
-
-	// GenerateRelayLinkProps()
-
 }
 
 func GetSnapShotInterference(linkinfo map[int]CellMap, activeSectors ...int) map[int]float64 {
@@ -241,9 +257,11 @@ func GetMeanInterference(linkinfo map[int]CellMap) map[int]float64 {
 func PrepareInputFiles() {
 
 	SplitUELocationsByCell(basedir + "uelocation.csv")
-	CreateSLS(basedir+"newsls.csv", basedir+"linkproperties.csv", true)            // Regenerate SLS full
-	CreateSLS(basedir+"newsls-mini.csv", basedir+"linkproperties.csv", false)      // Regenerate SLS mini
-	SplitSLSprofileByCell(basedir+"newsls-mini", basedir+"newsls-mini.csv", false) // Split SLS by Cell
+	CreateSLS(basedir+"newsls.csv", basedir+"linkproperties.csv", true)       // Regenerate SLS full
+	CreateSLS(basedir+"newsls-mini.csv", basedir+"linkproperties.csv", false) // Regenerate SLS mini
+
+	SplitSLSprofileByCell(basedir+"newsls-mini", basedir+"newsls-mini.csv", false)        // Split SLS by Cell
+	SplitSLSprofileByAssociation(basedir+"newsls-mini", basedir+"newsls-mini.csv", false) // Split SLS by Cell
 	CreateMiniLinkProfiles(basedir+"linkproperties-mini.csv", basedir+"linkproperties.csv")
 
 	SplitLinkProfilesByCell(basedir+"linkmini", basedir+"linkproperties.csv", false, nil)

@@ -49,26 +49,6 @@ type RelayNode struct {
 	FrequencyGHz float64
 }
 
-func LoadCSV(fname string, v interface{}) interface{} {
-	fname = basedir + fname
-
-	fid, err := os.Open(fname)
-	er(err)
-
-	data, err := os.ReadFile(fname)
-	er(err)
-
-	// var sls []SLSprofile
-	err = csvutil.Unmarshal(data, v)
-	er(err)
-
-	// fmt.Printf("LoadCSV %#v", v)
-	defer fid.Close()
-
-	fid.Close()
-	return v
-}
-
 func LoadSLSprofile(fname string) []SLSprofile {
 	// fname += ".csv"
 

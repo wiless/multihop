@@ -256,6 +256,68 @@ func SplitSLSprofileByCell(newfnamebase, slsfname string, full bool) {
 	fmt.Printf("\n")
 }
 
+// SplitSLSprofileByCell assumes its ordered file with UE in order
+// Use the file created by CreateSLS()
+func SplitSLSprofileByAssociation(newfnamebase, slsfname string, full bool) {
+	var fullstr = "full"
+	if !full {
+		fullstr = "mini"
+	}
+	log.Printf("SplitSLSprofileByAssociation(%s):: %s-sector[0-%d]csv (Regenerate from : %s) ", fullstr, NBs, newfnamebase, slsfname)
+	var err error
+	var fds = make([]*os.File, NBs)
+	for i := 0; i < NBs; i++ {
+
+		fname := fmt.Sprintf(newfnamebase+"-sector%02d.csv", i)
+		fds[i], err = os.Create(fname)
+		er(err)
+
+		if !full {
+			newsls := d3.SubStruct(SLSprofile{}, "RxNodeID", "BestRSRPNode", "BestSINR", "AssoTxAg", "AssoRxAg")
+			headers, _ := vlib.Struct2HeaderLine(newsls)
+			fds[i].WriteString(headers)
+		} else {
+			headers, _ := vlib.Struct2HeaderLine(SLSprofile{})
+			fds[i].WriteString(headers)
+		}
+
+		defer fds[i].Close()
+
+	}
+
+	// TotalLines := itucfg.NumUEperCell
+	// progress := 0
+	// step := int(float64(TotalLines*5) / 100.0) // 5%
+	// finfo, _ := os.Stat(slsfname)
+	// fmt.Printf("%d ROWS %vMB\n", TotalLines, finfo.Size()/(1024*1024))
+	bar := progressbar.Default(int64(itucfg.NumUEperCell))
+	// split SLSprofile entries into multiple GCellID
+	var gcellid int = 0
+	var cnt = 0
+
+	d3.ForEachParse(slsfname, func(l SLSprofile) {
+		gcellid = l.BestRSRPNode
+		var str string
+		if !full {
+			newsls := d3.SubStruct(l, "RxNodeID", "BestRSRPNode", "BestSINR", "AssoTxAg", "AssoRxAg")
+			str, _ = vlib.Struct2String(newsls)
+
+		} else {
+			str, _ = vlib.Struct2String(l)
+		}
+
+		fds[gcellid].WriteString("\n" + str)
+		cnt++
+
+		// if cnt%(NentriesPerCell) == 0 {
+
+		// cnt = 0
+		// }
+		bar.Add(1)
+	})
+	fmt.Printf("\n")
+}
+
 // SplitLinkProfilesByCells linkproperties.csv into linkproperties-cellXX.csv XX=00,01,02,...18
 // with minimal fields "RxNodeID", "TxID", "CouplingLoss"
 func SplitLinkProfilesByCell(newfnamebase, linkfname string, full bool, filterfn func(l LinkProfile) bool) {
