@@ -31,7 +31,7 @@
         },
         {
             "data": {
-                "url": "../results/default/uelocation.csv"
+                "url": "../n70k/relaylocations.csv"
             },
             "mark": "point",
             "encoding": {
@@ -41,6 +41,7 @@
                 "x": {
                     "field": "X",
                     "type": "quantitative"
+                    
                 },
                 "y": {
                     "field": "Y",

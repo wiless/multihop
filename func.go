@@ -32,7 +32,7 @@ func CreateSLS(slsfname, linkfname string, full bool) {
 	var sls SLSprofile
 	header, _ := vlib.Struct2HeaderLine(sls)
 	if !full {
-		newsls := d3.SubStruct(sls, "RxNodeID", "BestRSRPNode", "BestSINR", "BestULsinr", "AssoTxAg", "AssoRxAg")
+		newsls := d3.SubStruct(sls, "RxNodeID", "BestRSRPNode", "BestSINR", "BestCouplingLoss", "BestULsinr", "AssoTxAg", "AssoRxAg")
 		header, _ = vlib.Struct2HeaderLine(newsls)
 	}
 
@@ -92,13 +92,14 @@ func CreateSLS(slsfname, linkfname string, full bool) {
 				} else {
 					// small file size.. if less columns are added
 					sls = SLSprofile{
-						RxNodeID:     bestlink.RxNodeID,
-						BestRSRPNode: bestlink.TxID,
-						BestSINR:     maxsinr,
-						AssoTxAg:     bestlink.BSAasgainDB, AssoRxAg: bestlink.UEAasgainDB,
+						RxNodeID:         bestlink.RxNodeID,
+						BestRSRPNode:     bestlink.TxID,
+						BestCouplingLoss: bestlink.CouplingLoss,
+						BestSINR:         maxsinr,
+						AssoTxAg:         bestlink.BSAasgainDB, AssoRxAg: bestlink.UEAasgainDB,
 						BestULsinr: bestlink.CouplingLoss + ueTxPowerdBm - UL_N0dB,
 					}
-					newsls := d3.SubStruct(sls, "RxNodeID", "BestRSRPNode", "BestSINR", "BestULsinr", "AssoTxAg", "AssoRxAg")
+					newsls := d3.SubStruct(sls, "RxNodeID", "BestRSRPNode", "BestSINR", "BestCouplingLoss", "BestULsinr", "AssoTxAg", "AssoRxAg")
 					str, _ = vlib.Struct2String(newsls)
 				}
 				fd.WriteString("\n" + str)
@@ -263,7 +264,7 @@ func SplitSLSprofileByAssociation(newfnamebase, slsfname string, full bool) {
 	if !full {
 		fullstr = "mini"
 	}
-	log.Printf("SplitSLSprofileByAssociation(%s):: %s-sector[0-%d]csv (Regenerate from : %s) ", fullstr, NBs, newfnamebase, slsfname)
+	log.Printf("SplitSLSprofileByAssociation(%v):: %v-sector[0-%v]csv (Regenerate from : %v) ", fullstr, NBs, newfnamebase, slsfname)
 	var err error
 	var fds = make([]*os.File, NBs)
 	for i := 0; i < NBs; i++ {
